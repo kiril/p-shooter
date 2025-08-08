@@ -138,7 +138,7 @@ export default class PSHCollection {
     await this.db.wipe(this.name)
   }
 
-  on(type: PSHEventType, call: (event: PSHEvent) => void) {
+  on<DataType extends Pea=Pea, EventType extends PSHEvent<DataType>=PSHEvent<DataType>>(type: PSHEventType, call: (event: EventType) => void) {
     this.initialize().then(() => {
       this.db.events.register({ col: this.name, on: type, call })
     })

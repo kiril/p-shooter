@@ -4,6 +4,7 @@ import PSHEvent, { PSHEventType } from './PSHEvent'
 import PSHSQLiteWrapper from './PSHSQLiteWrapper'
 import PSHTrigger, { cursorName } from './PSHTrigger'
 import { sleep } from './util'
+import Pea from './Pea'
 
 
 interface EVTTable {
@@ -103,7 +104,7 @@ export default class PSHEventEngine {
   }
 
   private _registerPromises: Record<string,Promise<void>> = {}
-  async register(trigger: PSHTrigger): Promise<void> {
+  async register<DataType extends Pea=Pea, Event extends PSHEvent<DataType>=PSHEvent<DataType>>(trigger: PSHTrigger<DataType,Event>): Promise<void> {
     const name = cursorName(trigger)
     let promise = this._registerPromises[name]
 
@@ -114,7 +115,7 @@ export default class PSHEventEngine {
             const runner = this.triggerRunners.find(r => r.name === name)
             if (runner) {
               console.log('PSHEE.register/FOUND', name, 'so not starting a new one')
-              runner.trigger = trigger // updates the callback in case
+              runner.trigger = trigger as PSHTrigger // updates the callback in case
               runner.start() // just in case
               resolve()
               return
@@ -136,7 +137,7 @@ export default class PSHEventEngine {
             }
           })
           .then(date => {
-            const runner = new PSHTriggerRunner(this.sqlDb, trigger, date)
+            const runner = new PSHTriggerRunner(this.sqlDb, trigger as PSHTrigger, date)
             this.triggerRunners.push(runner)
             return runner.start()
           })
