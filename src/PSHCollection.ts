@@ -5,6 +5,7 @@ import PSHDeferredWrite from './PSHDeferredWrite'
 import PSHEvent, { PSHEventType } from './PSHEvent'
 import PSHDatabaseQuery from './PSHDatabaseQuery'
 import Pea from './Pea'
+import { PSHPK } from './PSHPK'
 
 
 export default class PSHCollection {
@@ -138,9 +139,19 @@ export default class PSHCollection {
     await this.db.wipe(this.name)
   }
 
-  on<DataType extends Pea=Pea, EventType extends PSHEvent<DataType>=PSHEvent<DataType>>(type: PSHEventType, call: (event: EventType) => void) {
-    this.initialize().then(() => {
-      this.db.events.register({ col: this.name, on: type, call })
+  async on<DataType extends Pea=Pea, EventType extends PSHEvent<DataType>=PSHEvent<DataType>>(type: PSHEventType, call: (event: EventType) => void) {
+    return this.initialize().then(() => this.db.events.register({ col: this.name, on: type, call }))
+  }
+
+  async onDoc<DataType extends Pea=Pea>(id: PSHPK, type: PSHEventType, call: (object: DataType) => void): Promise<() => void> {
+    return this.on<DataType>(type, (event) => {
+      if (event.id === id && event.after) {
+        try {
+          call(event.after)
+        } catch (error) {
+          console.error('PSHCollection.onDoc callback error:', error)
+        }
+      }
     })
   }
 

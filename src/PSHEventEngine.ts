@@ -1,4 +1,5 @@
 import { isEmpty, uniq } from 'underscore'
+import uuid from 'react-native-uuid'
 
 import PSHEvent, { PSHEventType } from './PSHEvent'
 import PSHSQLiteWrapper from './PSHSQLiteWrapper'
@@ -103,59 +104,58 @@ export default class PSHEventEngine {
     await Promise.all(statements.map(s => this.sqlDb.run(s)))
   }
 
-  private _registerPromises: Record<string,Promise<void>> = {}
-  async register<DataType extends Pea=Pea, Event extends PSHEvent<DataType>=PSHEvent<DataType>>(trigger: PSHTrigger<DataType,Event>): Promise<void> {
-    const name = cursorName(trigger)
-    let promise = this._registerPromises[name]
+  async register<DataType extends Pea=Pea, Event extends PSHEvent<DataType>=PSHEvent<DataType>>(trigger: PSHTrigger<DataType,Event>): Promise<() => void> {
+    const subscriptionId = uuid.v4() as string
+    const modifiedTrigger = { ...trigger } // copy to avoid mutating original
+    const descriptor = `${trigger.col}.${trigger.on}`
+    
+    const promise = new Promise<void>((resolve, reject) => {
+      this.initialize()
+        .then(() => {
+          console.log('PSHEE.register/NEW', descriptor, subscriptionId)
+          return this.track(trigger.col, trigger.on)
+        })
+        .then(() => {
+          const date = Date.now()
+          const sql = 'INSERT INTO _cursors (name, date) VALUES (?, ?)'
+          return this.sqlDb.insert<{ date: number }>(sql, [subscriptionId, date])
+            .then(() => date)
+        })
+        .then(date => {
+          const runner = new PSHTriggerRunner(this.sqlDb, modifiedTrigger as PSHTrigger, date, subscriptionId)
+          this.triggerRunners.push(runner)
+          return runner.start()
+        })
+        .then(resolve)
+        .catch(e => {
+          console.error('PSHEE.register/ERROR', e)
+          reject(e)
+        })
+    })
 
-    if (!promise) {
-      this._registerPromises[name] = promise = new Promise<void>((resolve, reject) => {
-        this.initialize()
-          .then(() => {
-            const runner = this.triggerRunners.find(r => r.name === name)
-            if (runner) {
-              console.log('PSHEE.register/FOUND', name, 'so not starting a new one')
-              runner.trigger = trigger as PSHTrigger // updates the callback in case
-              runner.start() // just in case
-              resolve()
-              return
-            }
-            console.log('PSHEE.register/NEW', name)
-      
-            this.track(trigger.col, trigger.on)
-            // const { date } = await this.sqlDb.insert<{ date: number }>('INSERT INTO _cursors (name, date) VALUES (?, ?) ON CONFLICT (name) DO NOTHING RETURNING date', [name, Date.now()])
-            return this.sqlDb.findOne<{ date: number, name: string }>('SELECT * FROM _cursors WHERE name = ?', [name])
-          })
-          .then(existing => {
-            if (existing) {
-              return existing.date
-            } else {
-              const date = Date.now()
-              const sql = 'INSERT INTO _cursors (name, date) VALUES (?, ?) ON CONFLICT (name) DO NOTHING'
-              return this.sqlDb.insert<{ date: number }>(sql, [name, date])
-                .then(() => date)
-            }
-          })
-          .then(date => {
-            const runner = new PSHTriggerRunner(this.sqlDb, trigger as PSHTrigger, date)
-            this.triggerRunners.push(runner)
-            return runner.start()
-          })
-          .then(resolve)
-          .catch(e => {
-            console.error('PSHEE.register/ERROR', e)
-            reject(e)
-          })
-
-      })
-    }
-
-    return promise
+    await promise
+    
+    return () => this.unregister(subscriptionId)
   }
+
+  private async unregister(subscriptionId: string) {
+    const runnerIndex = this.triggerRunners.findIndex(r => r.subscriptionId === subscriptionId)
+    if (runnerIndex >= 0) {
+      const runner = this.triggerRunners[runnerIndex]
+      await runner.stop()
+      this.triggerRunners.splice(runnerIndex, 1)
+      
+      // Clean up cursor
+      await this.sqlDb.run('DELETE FROM _cursors WHERE name = ?', [subscriptionId])
+      
+      console.log('PSHEE.unregister/SUCCESS', subscriptionId)
+    }
+  }
+
+
 
   async reset() {
     await this.stop()
-    this._registerPromises = {}
     this.triggerRunners = []
     this.initialized = false
   }
@@ -170,37 +170,32 @@ export default class PSHEventEngine {
 }
 
 class PSHTriggerRunner {
-  name: string
-  private cursor: number|null = null
   private stopped = false
 
-  constructor(private sqlDb: PSHSQLiteWrapper, public trigger: PSHTrigger, cursor?: number)  {
-    this.name = cursorName(trigger)
-    if (cursor) {
-      this.cursor = cursor
-    }
-  }
+  constructor(private sqlDb: PSHSQLiteWrapper, private trigger: PSHTrigger, private cursor: number, public readonly subscriptionId: string) {}
 
   get isRunning() {
     return !this.stopped
   }
 
+  get descriptor() { return `${this.trigger.col}.${this.trigger.on}` }
+
   private async fetchCursor() {
     if (this.cursor === null) {
       let date: number
-      const existing = await this.sqlDb.findOne<{ date: number, name: string }>('SELECT * FROM _cursors WHERE name = ?', [this.name])
+      const existing = await this.sqlDb.findOne<{ date: number, name: string }>('SELECT * FROM _cursors WHERE name = ?', [this.subscriptionId])
       if (existing) {
         date = existing.date
       } else {
         date = Date.now()
-        await this.sqlDb.insert<{ date: number }>('INSERT INTO _cursors (name, date) VALUES (?, ?) ON CONFLICT (name) DO NOTHING', [this.name, date])
+        await this.sqlDb.insert<{ date: number }>('INSERT INTO _cursors (name, date) VALUES (?, ?) ON CONFLICT (name) DO NOTHING', [this.subscriptionId, date])
       }
       this.cursor = date
     }
   }
 
   private async writeCursor(cursor: number) {
-    await this.sqlDb.run('UPDATE _cursors SET date = ? WHERE name = ?', [cursor, this.name])
+    await this.sqlDb.run('UPDATE _cursors SET date = ? WHERE name = ?', [cursor, this.subscriptionId])
     this.cursor = cursor
   }
 
@@ -223,17 +218,17 @@ class PSHTriggerRunner {
     }
     
     await this.fetchCursor()
-    console.log('PSHEE.start', this.name, this.cursor)
+    console.log('PSHEE.start', this.subscriptionId, this.cursor)
 
     let emptyCount = 0
     while (!this.stopped) {
       const count = await this.countEvents()
       if (count > 0) {
-        console.log('PSHEE', this.name, count, 'to process')
+        console.log('PSHEE', this.descriptor, count, 'to process')
       }
       const events = uniq(await this.nextEvents(), false, e => e.id)
       if (!isEmpty(events)) {
-        console.log('PSHEE', this.name, 'found', events.length, 'events (deduplicated)')
+        console.log('PSHEE', this.descriptor, 'found', events.length, 'events (deduplicated)')
       }
 
       try {
@@ -257,12 +252,12 @@ class PSHTriggerRunner {
           }
         }
       } catch (e) {
-        console.error(`PSHEE ${this.name} fail, sleeping`)
+        console.error(`PSHEE ${this.descriptor} fail, sleeping`)
         console.error(e)
         sleep(10000)
       }
     }
-    console.log('PSHEE.stop', this.name)
+    console.log('PSHEE.stop', this.descriptor)
   }
 
   async stop() {
