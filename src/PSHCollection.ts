@@ -144,8 +144,8 @@ export default class PSHCollection {
     return this.initialize().then(() => this.db.events.register({ col: this.name, on: type, call }))
   }
 
-  async onDoc<DataType extends Pea=Pea>(id: PSHPK, type: PSHEventType, call: (object: DataType) => void): Promise<() => void> {
-    return this.on<DataType>(type, (event) => {
+  async onDoc<DataType extends Pea=Pea>(id: PSHPK, call: (object: DataType) => void): Promise<() => void> {
+    return this.on<DataType>('write', (event) => {
       if (event.id === id && event.after) {
         try {
           call(event.after)
