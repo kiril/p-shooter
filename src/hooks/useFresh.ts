@@ -11,7 +11,7 @@ const useFresh = <Object extends Pea>(collection: PSHCollection, id?: string) =>
     setError(null)
     setData(undefined)
     if (id) {
-      const unsubPromise = collection.onDoc<Object>(id, 'write', setData)
+      const unsubPromise = collection.onDoc<Object>(id, setData)
       return () => { unsubPromise.then(unsub => unsub()) }
     }
   }, [collection, id])
