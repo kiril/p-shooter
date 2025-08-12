@@ -1,6 +1,6 @@
 {
   "name": "p-shooter",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "A TypeScript JSON object database for React Native with SQLite backend.",
   "main": "dist/index.cjs.js",
   "module": "dist/index.esm.js",

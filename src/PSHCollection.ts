@@ -156,22 +156,11 @@ export default class PSHCollection {
     })
   }
 
-  async onQuery<DataType extends Pea=Pea>(query: PSHDatabaseQuery, call: (event: PSHEvent<DataType>) => void): Promise<() => void> {
-    return this.on<DataType>('write', (event) => {
-      if (event.after && matchesQuery(event.after, query)) {
-        try {
-          call(event)
-        } catch (error) {
-          console.error('PSHCollection.onQuery callback error:', error)
-        }
-      } else if (event.before && matchesQuery(event.before, query)) {
-        // If the before state matches the query, we still call the callback
-        // This is useful for cases where we want to know about deletions or updates
-        try {
-          call(event)
-        } catch (error) {
-          console.error('PSHCollection.onQuery callback error:', error)
-        }
+  async onQuery<Object extends Pea=Pea>(query: PSHDatabaseQuery, call: (results: Object[]) => void): Promise<() => void> {
+    return this.on<Object>('write', async (event) => {
+      if ((event.after && matchesQuery(event.after, query)) || (event.before && matchesQuery(event.before, query))) {
+        const results = await this.find<Object>(query)
+        call(results)
       }
     })
   }
