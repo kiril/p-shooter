@@ -224,9 +224,14 @@ class PSHTriggerRunner {
     while (!this.stopped) {
       const count = await this.countEvents()
       if (count > 0) {
-        console.log('PSHEE', this.descriptor, count, 'to process')
+        console.log('PSHEE', this.descriptor, count, 'to process. cursor=', this.cursor)
       }
-      const events = uniq(await this.nextEvents(), false, e => e.id)
+      const rawEvents = await this.nextEvents()
+      const events = uniq(rawEvents, false, e => e.id)
+      if (events.length !== rawEvents.length) {
+        console.warn(`PSHEE ${this.descriptor} found ${rawEvents.length} events, de-duplicated to ${events.length}`)
+        console.log(rawEvents)
+      }
       if (!isEmpty(events)) {
         console.log('PSHEE', this.descriptor, 'found', events.length, 'events (deduplicated)')
       }
@@ -244,6 +249,7 @@ class PSHTriggerRunner {
               console.log('PSHEE.event', event.type, event.id, new Date(event.date))
               await this.trigger.call(event)
               if (!this.cursor || event.date > this.cursor) {
+                console.log('PSHEE.event/advancing cursor', this.cursor, '->', event.date)
                 await this.writeCursor(event.date)
               }
             } else {
