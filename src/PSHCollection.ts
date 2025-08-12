@@ -156,7 +156,7 @@ export default class PSHCollection {
     })
   }
 
-  async onQuery<DataType extends Pea=Pea>(query: PSHDatabaseQuery, type: PSHEventType, call: (event: PSHEvent<DataType>) => void): Promise<() => void> {
+  async onQuery<DataType extends Pea=Pea>(query: PSHDatabaseQuery, call: (event: PSHEvent<DataType>) => void): Promise<() => void> {
     return this.on<DataType>('write', (event) => {
       if (event.after && matchesQuery(event.after, query)) {
         try {
