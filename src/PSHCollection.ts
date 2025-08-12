@@ -6,6 +6,7 @@ import PSHEvent, { PSHEventType } from './PSHEvent'
 import PSHDatabaseQuery from './PSHDatabaseQuery'
 import Pea from './Pea'
 import { PSHPK } from './PSHPK'
+import { matchesQuery } from './shared'
 
 
 export default class PSHCollection {
@@ -150,6 +151,20 @@ export default class PSHCollection {
           call(event.after)
         } catch (error) {
           console.error('PSHCollection.onDoc callback error:', error)
+        }
+      }
+    })
+  }
+
+  async onQuery<DataType extends Pea=Pea>(query: PSHDatabaseQuery, type: PSHEventType, call: (event: PSHEvent<DataType>) => void): Promise<() => void> {
+    return this.on<DataType>(type, (event) => {
+      const data = event.after as DataType | undefined
+      if (!data) return
+      if (matchesQuery(data, query)) {
+        try {
+          call(event)
+        } catch (error) {
+          console.error('PSHCollection.onQuery callback error:', error)
         }
       }
     })

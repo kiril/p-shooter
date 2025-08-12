@@ -13,6 +13,7 @@ import PSHDatabaseQuery from './PSHDatabaseQuery'
 import PSHColumnDef from './PSHColumnDef'
 import Pea from './Pea'
 import { PSHPK } from './PSHPK'
+import { toSQLQueryable } from './shared'
 
 
 export default class PSHDatabase {
@@ -139,23 +140,14 @@ export default class PSHDatabase {
   }
 
   async explain(colName: string, query: PSHDatabaseQuery) {
-    const [querySql, args] = this.toSQLandArgs(colName, query)
+    const [querySql, args] = toSQLQueryable(colName, query)
     const explainQuery = `explain query plan ${querySql}`
     const ret = await this.sqlDb.query<object>(explainQuery, args)
     console.log('explain', colName, query, ret)
   }
 
-  private toSQLandArgs(colName: string, query: PSHDatabaseQuery): [string, Array<unknown>] {
-    const pairs = Object.entries(query).map(([k, v]) => ({ k, v }))
-    const clause = ({ k, v }: { k: string, v: unknown }) => isArray(v) ? `${k} ${(v as [string, unknown])[0]} ?` : `${k} = ?`
-    const arg = ({ v }: { k: string, v: unknown }) => isArray(v) ? (v as [string, unknown])[0] : v
-    const args = pairs.map(arg)
-    const sql = `SELECT id, json, date FROM ${colName} WHERE ${pairs.map(clause).join(' AND ')}`
-    return [sql, args]
-  }
-
   async findOne<Data extends Pea>(colName: string, query: PSHDatabaseQuery): Promise<Data|null> {
-    const [sql, args] = this.toSQLandArgs(colName, query)
+    const [sql, args] = toSQLQueryable(colName, query)
     const matches = await this.sqlDb.query<Wrapped>(sql, args)
       .then(rs => rs.map(unwrap<Data>))
       .catch(e => { console.error('PSHDatabase.findOne/error(query)', sql, e); throw e })
@@ -169,7 +161,7 @@ export default class PSHDatabase {
   }
 
   async find<Data extends Pea>(colName: string, query: PSHDatabaseQuery): Promise<Data[]> {
-    const [sql, args] = this.toSQLandArgs(colName, query)
+    const [sql, args] = toSQLQueryable(colName, query)
     // log('PSHDatabase.find', sql, args)
     return this.sqlDb.query<Wrapped>(sql, args).then(res => res.map(unwrap<Data>)).catch(e => { console.error('PSHDatabase.find/error', sql, e); throw e })
   }
