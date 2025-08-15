@@ -63,7 +63,7 @@ const indexSql = (table: EVTTable, ix: EVTIndex) => {
 
 export default class PSHEventEngine {
   private initialized = false
-  private triggerRunners: PSHTriggerRunner[] = []
+  private collectionRunners: Map<string, PSHCollectionRunner> = new Map()
   
   constructor(private sqlDb: PSHSQLiteWrapper) {
   }
@@ -123,9 +123,20 @@ export default class PSHEventEngine {
             .then(() => date)
         })
         .then(date => {
-          const runner = new PSHTriggerRunner(this.sqlDb, modifiedTrigger as PSHTrigger, date, subscriptionId)
-          this.triggerRunners.push(runner)
-          return runner.start()
+          // Get or create collection runner
+          let runner = this.collectionRunners.get(trigger.col)
+          if (!runner) {
+            runner = new PSHCollectionRunner(this.sqlDb, trigger.col)
+            this.collectionRunners.set(trigger.col, runner)
+          }
+          
+          // Add trigger to runner
+          runner.addTrigger(modifiedTrigger as PSHTrigger, subscriptionId, date)
+          
+          // Start runner if not already running
+          if (!runner.isRunning) {
+            return runner.start()
+          }
         })
         .then(resolve)
         .catch(e => {
@@ -140,77 +151,122 @@ export default class PSHEventEngine {
   }
 
   private async unregister(subscriptionId: string) {
-    const runnerIndex = this.triggerRunners.findIndex(r => r.subscriptionId === subscriptionId)
-    if (runnerIndex >= 0) {
-      const runner = this.triggerRunners[runnerIndex]
-      await runner.stop()
-      this.triggerRunners.splice(runnerIndex, 1)
-      
-      // Clean up cursor
-      await this.sqlDb.run('DELETE FROM _cursors WHERE name = ?', [subscriptionId])
-      
-      maybeLog('PSHEE.unregister/SUCCESS', subscriptionId)
+    // Find which collection runner has this subscription
+    for (const [col, runner] of this.collectionRunners) {
+      if (runner.hasTrigger(subscriptionId)) {
+        await runner.removeTrigger(subscriptionId)
+        
+        // Clean up cursor
+        await this.sqlDb.run('DELETE FROM _cursors WHERE name = ?', [subscriptionId])
+        
+        // If runner has no more triggers, stop and remove it
+        if (runner.triggerCount === 0) {
+          await runner.stop()
+          this.collectionRunners.delete(col)
+        }
+        
+        maybeLog('PSHEE.unregister/SUCCESS', subscriptionId)
+        return
+      }
     }
   }
 
-
-
   async reset() {
     await this.stop()
-    this.triggerRunners = []
+    this.collectionRunners.clear()
     this.initialized = false
   }
 
   async start() {
-    await Promise.all(this.triggerRunners.map(runner => runner.start()))
+    await Promise.all(Array.from(this.collectionRunners.values()).map(runner => runner.start()))
   }
 
   async stop() {
-    await Promise.all(this.triggerRunners.map(runner => runner.stop()))
+    await Promise.all(Array.from(this.collectionRunners.values()).map(runner => runner.stop()))
   }
 }
 
-class PSHTriggerRunner {
-  private stopped = false
+interface TriggerRegistration {
+  trigger: PSHTrigger
+  subscriptionId: string
+  cursor: number
+}
 
-  constructor(private sqlDb: PSHSQLiteWrapper, private trigger: PSHTrigger, private cursor: number, public readonly subscriptionId: string) {}
+class PSHCollectionRunner {
+  private stopped = false
+  private triggers: Map<string, TriggerRegistration> = new Map()
+
+  constructor(private sqlDb: PSHSQLiteWrapper, private col: string) {}
 
   get isRunning() {
     return !this.stopped
   }
 
-  get descriptor() { return `${this.trigger.col}.${this.trigger.on}` }
+  get triggerCount() {
+    return this.triggers.size
+  }
 
-  private async fetchCursor() {
-    if (this.cursor === null) {
-      let date: number
-      const existing = await this.sqlDb.findOne<{ date: number, name: string }>('SELECT * FROM _cursors WHERE name = ?', [this.subscriptionId])
-      if (existing) {
-        date = existing.date
-      } else {
-        date = Date.now()
-        await this.sqlDb.insert<{ date: number }>('INSERT INTO _cursors (name, date) VALUES (?, ?) ON CONFLICT (name) DO NOTHING', [this.subscriptionId, date])
-      }
-      this.cursor = date
+  get descriptor() { 
+    return `${this.col}[${Array.from(this.triggers.values()).map(t => t.trigger.on).join(',')}]`
+  }
+
+  hasTrigger(subscriptionId: string): boolean {
+    return this.triggers.has(subscriptionId)
+  }
+
+  addTrigger(trigger: PSHTrigger, subscriptionId: string, cursor: number) {
+    this.triggers.set(subscriptionId, { trigger, subscriptionId, cursor })
+  }
+
+  async removeTrigger(subscriptionId: string) {
+    this.triggers.delete(subscriptionId)
+  }
+
+  private async fetchCursor(subscriptionId: string): Promise<number> {
+    const existing = await this.sqlDb.findOne<{ date: number, name: string }>('SELECT * FROM _cursors WHERE name = ?', [subscriptionId])
+    if (existing) {
+      return existing.date
+    } else {
+      const date = Date.now()
+      await this.sqlDb.insert<{ date: number }>('INSERT INTO _cursors (name, date) VALUES (?, ?) ON CONFLICT (name) DO NOTHING', [subscriptionId, date])
+      return date
     }
   }
 
-  private async writeCursor(cursor: number) {
-    await this.sqlDb.run('UPDATE _cursors SET date = ? WHERE name = ?', [cursor, this.subscriptionId])
-    this.cursor = cursor
+  private async writeCursor(subscriptionId: string, cursor: number) {
+    await this.sqlDb.run('UPDATE _cursors SET date = ? WHERE name = ?', [cursor, subscriptionId])
+    
+    // Update local cursor
+    const registration = this.triggers.get(subscriptionId)
+    if (registration) {
+      registration.cursor = cursor
+    }
+  }
+
+  private getEarliestCursor(): number {
+    let earliest = Infinity
+    for (const registration of this.triggers.values()) {
+      if (registration.cursor < earliest) {
+        earliest = registration.cursor
+      }
+    }
+    return earliest === Infinity ? Date.now() : earliest
   }
 
   async nextEvents(): Promise<PSHEvent[]> {
-    const latest = await this.sqlDb.findOne<PSHRawEvent>('SELECT col, id, type, date, before, after FROM _events WHERE col = ? AND type = ? AND date > ? ORDER BY date ASC LIMIT 1', [this.trigger.col, this.trigger.on, this.cursor])
+    const earliestCursor = this.getEarliestCursor()
+    const latest = await this.sqlDb.findOne<PSHRawEvent>('SELECT col, id, type, date, before, after FROM _events WHERE col = ? AND date > ? ORDER BY date ASC LIMIT 1', [this.col, earliestCursor])
     if (!latest) {
       return []
     }
-    const all = await this.sqlDb.query<PSHRawEvent>('SELECT col, id, type, date, before, after FROM _events WHERE col = ? AND type = ? AND date = ? ORDER BY date ASC', [this.trigger.col, this.trigger.on, latest.date])
+    const all = await this.sqlDb.query<PSHRawEvent>('SELECT col, id, type, date, before, after FROM _events WHERE col = ? AND date = ? ORDER BY date ASC', [this.col, latest.date])
     return all.map(inflate)
   }
 
   async countEvents(): Promise<number> {
-    return this.sqlDb.count(`SELECT count(*) FROM _events WHERE date > ${this.cursor}`)
+    const earliestCursor = this.getEarliestCursor()
+    const result = await this.sqlDb.findOne<{ count: number }>('SELECT count(*) as count FROM _events WHERE col = ? AND date > ?', [this.col, earliestCursor])
+    return result?.count || 0
   }
 
   async start() {
@@ -218,14 +274,18 @@ class PSHTriggerRunner {
       return
     }
     
-    await this.fetchCursor()
-    maybeLog('PSHEE.start', this.subscriptionId, this.cursor)
+    // Fetch cursors for all triggers
+    for (const [subscriptionId, registration] of this.triggers) {
+      registration.cursor = await this.fetchCursor(subscriptionId)
+    }
+    
+    maybeLog('PSHEE.start', this.descriptor, this.getEarliestCursor())
 
     let emptyCount = 0
-    while (!this.stopped) {
+    while (!this.stopped && this.triggers.size > 0) {
       const count = await this.countEvents()
       if (count > 0) {
-        maybeLog('PSHEE', this.descriptor, count, 'to process. cursor=', this.cursor)
+        maybeLog('PSHEE', this.descriptor, count, 'to process. earliest cursor=', this.getEarliestCursor())
       }
       const rawEvents = await this.nextEvents()
       const events = uniq(rawEvents, false, e => e.id)
@@ -244,17 +304,23 @@ class PSHTriggerRunner {
         if (isEmpty(events)) {
           emptyCount += 1
           const millis = emptyCount > 60 ? 2000 : emptyCount > 10 ? 1000 : 250
-          // maybeLog('PSHEE.empty: sleep', { millis })
           await sleep(millis)
         } else {
           for (const event of events) {
             if (event) {
               emptyCount = 0
               maybeLog('PSHEE.event', event.type, event.id, new Date(event.date))
-              await this.trigger.call(event)
-              if (!this.cursor || event.date > this.cursor) {
-                maybeLog('PSHEE.event/advancing cursor', this.cursor, '->', event.date)
-                await this.writeCursor(event.date)
+              
+              // Process event for all applicable triggers
+              for (const [subscriptionId, registration] of this.triggers) {
+                const { trigger, cursor } = registration
+                
+                // Only process if this trigger is interested in this event type and cursor is behind
+                if (trigger.on === event.type || trigger.on === 'write' && event.date > cursor) {
+                  await trigger.call(event)
+                  maybeLog('PSHEE.event/advancing cursor', subscriptionId, cursor, '->', event.date)
+                  await this.writeCursor(subscriptionId, event.date)
+                }
               }
             } else {
               maybeWarn('PSHEE.event null')
@@ -264,7 +330,7 @@ class PSHTriggerRunner {
       } catch (e) {
         maybeError(`PSHEE ${this.descriptor} fail, sleeping`)
         maybeError(e)
-        sleep(10000)
+        await sleep(10000)
       }
     }
     maybeLog('PSHEE.stop', this.descriptor)
