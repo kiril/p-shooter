@@ -167,7 +167,9 @@ export default class PSHCollection {
   }
 
   async onQuery<Object extends Pea=Pea>(query: PSHDatabaseQuery, call: (results: Object[]) => void|Promise<void>): Promise<() => void> {
+    maybeLog('PSHCollection.onQuery', this.qualifiedName, query)
     const initialData = await this.find<Object>(query)
+    maybeLog('PSHCollection.onQuery/initialData', initialData.length)
     call(initialData)
     return this.on<Object>('write', async (event) => {
       if ((event.after && matchesQuery(event.after, query)) || (event.before && matchesQuery(event.before, query))) {
