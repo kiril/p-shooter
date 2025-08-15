@@ -147,6 +147,14 @@ export default class PSHCollection {
   }
 
   async onDoc<DataType extends Pea=Pea>(id: PSHPK, call: (object: DataType) => void): Promise<() => void> {
+    const initialDoc = await this.get<DataType>(id)
+    if (initialDoc) {
+      try {
+        call(initialDoc)
+      } catch (error) {
+        maybeError('PSHCollection.onDoc callback error:', error)
+      }
+    }
     return this.on<DataType>('write', (event) => {
       if (event.id === id && event.after) {
         try {
@@ -159,6 +167,8 @@ export default class PSHCollection {
   }
 
   async onQuery<Object extends Pea=Pea>(query: PSHDatabaseQuery, call: (results: Object[]) => void|Promise<void>): Promise<() => void> {
+    const initialData = await this.find<Object>(query)
+    call(initialData)
     return this.on<Object>('write', async (event) => {
       if ((event.after && matchesQuery(event.after, query)) || (event.before && matchesQuery(event.before, query))) {
         const results = await this.find<Object>(query)
