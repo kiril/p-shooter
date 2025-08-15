@@ -6,7 +6,7 @@ import PSHSQLiteWrapper from './PSHSQLiteWrapper'
 import PSHTrigger, { cursorName } from './PSHTrigger'
 import { sleep } from './util'
 import Pea from './Pea'
-import { maybeLog, maybeError } from './shared'
+import { maybeLog, maybeError, maybeWarn } from './shared'
 
 
 interface EVTTable {
@@ -230,7 +230,7 @@ class PSHTriggerRunner {
       const rawEvents = await this.nextEvents()
       const events = uniq(rawEvents, false, e => e.id)
       if (events.length !== rawEvents.length) {
-        console.warn(`PSHEE ${this.descriptor} found ${rawEvents.length} events, de-duplicated to ${events.length}`)
+        maybeWarn(`PSHEE ${this.descriptor} found ${rawEvents.length} events, de-duplicated to ${events.length}`)
         maybeLog(rawEvents)
       }
       if (!isEmpty(events)) {
@@ -256,13 +256,13 @@ class PSHTriggerRunner {
                 await this.writeCursor(event.date)
               }
             } else {
-              console.warn('PSHEE.event null')
+              maybeWarn('PSHEE.event null')
             }
           }
         }
       } catch (e) {
-        console.error(`PSHEE ${this.descriptor} fail, sleeping`)
-        console.error(e)
+        maybeError(`PSHEE ${this.descriptor} fail, sleeping`)
+        maybeError(e)
         sleep(10000)
       }
     }

@@ -5,7 +5,7 @@ import SQLite, {
 } from 'react-native-sqlite-2'
 
 import SQLColumnInfo from './types/sqlite/SQLColumnInfo'
-import { debug } from 'console'
+import { maybeError, maybeLog, maybeWarn } from './shared'
 
 
 interface SQLiteConnectionOptions {
@@ -61,9 +61,9 @@ export default class PSHSQLiteWrapper {
       const onError: SQLStatementErrorCallback = (t, e) => {
         const thing = `${e}`
         if (!thing.includes('duplicate column name')) {
-          debug('PSHSQLiteWrapper.try: failure', e)
+          maybeLog('PSHSQLiteWrapper.try: failure', e)
         } else {
-          debug('PHSQLiteWrapper.try: duplicate column name')
+          maybeLog('PHSQLiteWrapper.try: duplicate column name')
         }
         resolve(false)
         return true
@@ -84,7 +84,7 @@ export default class PSHSQLiteWrapper {
         resolve(ret)
       }
       const onError: SQLStatementErrorCallback = (tx: SQLTransaction, sqlError: SQLError) => {
-        console.error('PHSQLiteWrapper.query/onError', sql, sqlError)
+        maybeError('PHSQLiteWrapper.query/onError', sql, sqlError)
         reject(sqlError)
         return true
       }
@@ -113,7 +113,7 @@ export default class PSHSQLiteWrapper {
         resolve(results)
       }
       const onError: SQLStatementErrorCallback = (tx: SQLTransaction, e: SQLError) => {
-        console.error('PSHSQLiteWrapper.run/onError', sql, e)
+        maybeError('PSHSQLiteWrapper.run/onError', sql, e)
         reject(e)
         return true
       }
@@ -129,13 +129,13 @@ export default class PSHSQLiteWrapper {
         if (results.rows.length === 1) {
           resolve(results.rows.item(0) as T)
         } else if (results.rows.length > 1) {
-          console.warn('PSHSQLiteWrapper.insert got', results.rows.length, 'rows')
+          maybeWarn('PSHSQLiteWrapper.insert got', results.rows.length, 'rows')
         }
         // log('PSHSQLiteWrapper.insert', results.rows, 'rows', results)
         resolve(null)
       }
       const onError: SQLStatementErrorCallback = (tx: SQLTransaction, sqlError: SQLError) => {
-        console.error('PSHSQLiteWrapper.insert/onError', sql, sqlError)
+        maybeError('PSHSQLiteWrapper.insert/onError', sql, sqlError)
         reject(sqlError)
         return true
       }
@@ -148,7 +148,7 @@ export default class PSHSQLiteWrapper {
   transaction(callback: (tx: SQLTransaction) => void) {
     return new Promise<void>((resolve0, reject0) => {
       const resolve = resolve0
-      const reject = (e: any) => { console.error('PSHSQLiteWrapper.transaction/reject', e); reject0(e) }
+      const reject = (e: any) => { maybeError('PSHSQLiteWrapper.transaction/reject', e); reject0(e) }
       this.sqlDb.transaction(callback, reject, resolve)
     })
   }
