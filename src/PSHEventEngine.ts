@@ -233,17 +233,18 @@ class PSHTriggerRunner {
         maybeWarn(`PSHEE ${this.descriptor} found ${rawEvents.length} events, de-duplicated to ${events.length}`)
         maybeLog(rawEvents)
       }
-      if (!isEmpty(events)) {
-        maybeLog('PSHEE', this.descriptor, 'found', events.length, 'events (deduplicated)')
-      } else if (!isEmpty(rawEvents)) {
-        maybeLog('PSHEE', this.descriptor, 'deduplicated', rawEvents.length, 'events to 0')
+      if (isEmpty(events) && !isEmpty(rawEvents)) {
+        maybeLog('PSHEE', this.descriptor, 'found no events (deduplicated)')
+      }
+      if (!isEmpty(events) && events.length !== rawEvents.length) {
+        maybeLog('PSHEE', this.descriptor, 'found', events.length, 'events (deduplicated from', rawEvents.length, ')')
       }
 
       try {
         if (isEmpty(events)) {
           emptyCount += 1
           const millis = emptyCount > 60 ? 2000 : emptyCount > 10 ? 1000 : 250
-          // log('PSHEE.empty: sleep', { millis })
+          maybeLog('PSHEE.empty: sleep', { millis })
           await sleep(millis)
         } else {
           for (const event of events) {
