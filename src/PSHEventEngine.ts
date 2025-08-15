@@ -244,7 +244,7 @@ class PSHTriggerRunner {
         if (isEmpty(events)) {
           emptyCount += 1
           const millis = emptyCount > 60 ? 2000 : emptyCount > 10 ? 1000 : 250
-          maybeLog('PSHEE.empty: sleep', { millis })
+          // maybeLog('PSHEE.empty: sleep', { millis })
           await sleep(millis)
         } else {
           for (const event of events) {
