@@ -235,8 +235,8 @@ class PSHTriggerRunner {
       }
       if (!isEmpty(events)) {
         maybeLog('PSHEE', this.descriptor, 'found', events.length, 'events (deduplicated)')
-      } else {
-        maybeLog('PSHEE', this.descriptor, 'found no events (deduplicated)')
+      } else if (!isEmpty(rawEvents)) {
+        maybeLog('PSHEE', this.descriptor, 'deduplicated', rawEvents.length, 'events to 0')
       }
 
       try {
