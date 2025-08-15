@@ -6,6 +6,7 @@ import PSHSQLiteWrapper from './PSHSQLiteWrapper'
 import PSHTrigger, { cursorName } from './PSHTrigger'
 import { sleep } from './util'
 import Pea from './Pea'
+import { maybeLog, maybeError } from './shared'
 
 
 interface EVTTable {
@@ -80,7 +81,7 @@ export default class PSHEventEngine {
     }
 
     await Promise.all(Object.values(Tables).map(initializeTable))
-    console.log('PSHEventEngine.initialize/SUCCESS')
+    maybeLog('PSHEventEngine.initialize/SUCCESS')
     this.initialized = true
   }
 
@@ -112,7 +113,7 @@ export default class PSHEventEngine {
     const promise = new Promise<void>((resolve, reject) => {
       this.initialize()
         .then(() => {
-          console.log('PSHEE.register/NEW', descriptor, subscriptionId)
+          maybeLog('PSHEE.register/NEW', descriptor, subscriptionId)
           return this.track(trigger.col, trigger.on)
         })
         .then(() => {
@@ -128,7 +129,7 @@ export default class PSHEventEngine {
         })
         .then(resolve)
         .catch(e => {
-          console.error('PSHEE.register/ERROR', e)
+          maybeError('PSHEE.register/ERROR', e)
           reject(e)
         })
     })
@@ -148,7 +149,7 @@ export default class PSHEventEngine {
       // Clean up cursor
       await this.sqlDb.run('DELETE FROM _cursors WHERE name = ?', [subscriptionId])
       
-      console.log('PSHEE.unregister/SUCCESS', subscriptionId)
+      maybeLog('PSHEE.unregister/SUCCESS', subscriptionId)
     }
   }
 
@@ -218,22 +219,24 @@ class PSHTriggerRunner {
     }
     
     await this.fetchCursor()
-    console.log('PSHEE.start', this.subscriptionId, this.cursor)
+    maybeLog('PSHEE.start', this.subscriptionId, this.cursor)
 
     let emptyCount = 0
     while (!this.stopped) {
       const count = await this.countEvents()
       if (count > 0) {
-        console.log('PSHEE', this.descriptor, count, 'to process. cursor=', this.cursor)
+        maybeLog('PSHEE', this.descriptor, count, 'to process. cursor=', this.cursor)
       }
       const rawEvents = await this.nextEvents()
       const events = uniq(rawEvents, false, e => e.id)
       if (events.length !== rawEvents.length) {
         console.warn(`PSHEE ${this.descriptor} found ${rawEvents.length} events, de-duplicated to ${events.length}`)
-        console.log(rawEvents)
+        maybeLog(rawEvents)
       }
       if (!isEmpty(events)) {
-        console.log('PSHEE', this.descriptor, 'found', events.length, 'events (deduplicated)')
+        maybeLog('PSHEE', this.descriptor, 'found', events.length, 'events (deduplicated)')
+      } else {
+        maybeLog('PSHEE', this.descriptor, 'found no events (deduplicated)')
       }
 
       try {
@@ -246,10 +249,10 @@ class PSHTriggerRunner {
           for (const event of events) {
             if (event) {
               emptyCount = 0
-              console.log('PSHEE.event', event.type, event.id, new Date(event.date))
+              maybeLog('PSHEE.event', event.type, event.id, new Date(event.date))
               await this.trigger.call(event)
               if (!this.cursor || event.date > this.cursor) {
-                console.log('PSHEE.event/advancing cursor', this.cursor, '->', event.date)
+                maybeLog('PSHEE.event/advancing cursor', this.cursor, '->', event.date)
                 await this.writeCursor(event.date)
               }
             } else {
@@ -263,7 +266,7 @@ class PSHTriggerRunner {
         sleep(10000)
       }
     }
-    console.log('PSHEE.stop', this.descriptor)
+    maybeLog('PSHEE.stop', this.descriptor)
   }
 
   async stop() {

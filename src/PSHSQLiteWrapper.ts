@@ -5,6 +5,7 @@ import SQLite, {
 } from 'react-native-sqlite-2'
 
 import SQLColumnInfo from './types/sqlite/SQLColumnInfo'
+import { debug } from 'console'
 
 
 interface SQLiteConnectionOptions {
@@ -60,9 +61,9 @@ export default class PSHSQLiteWrapper {
       const onError: SQLStatementErrorCallback = (t, e) => {
         const thing = `${e}`
         if (!thing.includes('duplicate column name')) {
-          console.log('PSHSQLiteWrapper.try failure', e)
+          debug('PSHSQLiteWrapper.try: failure', e)
         } else {
-          console.log('PHSQLiteWrapper.try/duplicate column name')
+          debug('PHSQLiteWrapper.try: duplicate column name')
         }
         resolve(false)
         return true

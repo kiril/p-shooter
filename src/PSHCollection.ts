@@ -6,7 +6,7 @@ import PSHEvent, { PSHEventType } from './PSHEvent'
 import PSHDatabaseQuery from './PSHDatabaseQuery'
 import Pea from './Pea'
 import { PSHPK } from './PSHPK'
-import { matchesQuery } from './shared'
+import { maybeLog, maybeError, matchesQuery } from './shared'
 
 
 export default class PSHCollection {
@@ -53,12 +53,12 @@ export default class PSHCollection {
         this.db.create(this.name)
           .then(() => {
             const d = Date.now()
-            console.log('PSHCollection.initialize/success', this.qualifiedName, `db:${this.db.initialized}`, `this:${this._initialized}`, `now:${d}`)
+            maybeLog('PSHCollection.initialize/success', this.qualifiedName, `db:${this.db.initialized}`, `this:${this._initialized}`, `now:${d}`)
             this._initialized = d
           })
           .then(resolve)
           .catch(e => { 
-            console.error('PSHCollection.initialize/fail', this.qualifiedName, e)
+            maybeError('PSHCollection.initialize/fail', this.qualifiedName, e)
             reject(e) 
           })
 
@@ -112,11 +112,13 @@ export default class PSHCollection {
   }
 
   async save<Data extends Pea>(ob: Data, id?: string): Promise<string> {
+    maybeLog('PSHCollection.save', this.qualifiedName, id || ob.id, ob)
     await this.initialize()
     return this.db.save(this.name, ob, id)
   }
 
   async update(id: string, updates: Record<string,unknown>) {
+    maybeLog('PSHCollection.update', this.qualifiedName, id, updates)
     await this.initialize()
     const existing = await this.get(id)
     if (!existing) {
@@ -150,7 +152,7 @@ export default class PSHCollection {
         try {
           call(event.after)
         } catch (error) {
-          console.error('PSHCollection.onDoc callback error:', error)
+          maybeError('PSHCollection.onDoc callback error:', error)
         }
       }
     })

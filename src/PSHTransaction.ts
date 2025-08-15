@@ -5,6 +5,7 @@ import PSHCollection from './PSHCollection'
 import PSHDeferredWrite from './PSHDeferredWrite'
 import PSHSQLiteWrapper from './PSHSQLiteWrapper'
 import Pea from './Pea'
+import { maybeLog } from './shared'
 
 
 export default class PSHTransaction {
@@ -57,7 +58,7 @@ export default class PSHTransaction {
   }
 
   async execute() {
-    console.log('PSHTransaction.execute...')
+    maybeLog('PSHTransaction.execute...')
     const writeAll = (tx: SQLTransaction) => this.toAdd.map(a => a.toWrite()).forEach(({ sql, args }) => tx.executeSql(sql, args))
     await this.sqlDb.transaction(writeAll).then(() => this.toAdd = [])
   }

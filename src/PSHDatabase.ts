@@ -13,7 +13,7 @@ import PSHDatabaseQuery from './PSHDatabaseQuery'
 import PSHColumnDef from './PSHColumnDef'
 import Pea from './Pea'
 import { PSHPK } from './PSHPK'
-import { toSQLQueryable } from './shared'
+import { maybeLog, maybeError, maybeWarn, toSQLQueryable } from './shared'
 
 
 export default class PSHDatabase {
@@ -23,7 +23,7 @@ export default class PSHDatabase {
     let promise = this._promises[name]
     if (!promise) {
       this._promises[name] = promise = new Promise<PSHDatabase>((resolve, reject) => {
-        console.log('PSHDatabase.connect', name)
+        maybeLog('PSHDatabase.connect', name)
         const description = `P-Shooter Backing Store ${name}`
         const params = { name: `${name}.db`, version: '1.0', description }
         PSHSQLiteWrapper.connect(params)
@@ -70,7 +70,7 @@ export default class PSHDatabase {
 
   private async initialize(force?: boolean) {
     if (this._initialized === 0 || force) {
-      console.log('PSHDatabase.initialize', this.dbName)
+      maybeLog('PSHDatabase.initialize', this.dbName)
       await Promise.all(this.collectionsToInitialize().map(c => this.create(c)))
       await this.events.initialize()
       await this.events.start()
@@ -88,10 +88,10 @@ export default class PSHDatabase {
     }
 
     for (const table of failedTables.reverse()) {
-      console.log('PSHDatabase.reset/retry drop', table)
+      maybeLog('PSHDatabase.reset/retry drop', table)
       await this.sqlDb.run(`DROP TABLE IF EXISTS ${table}`)
         .then(() => failedTables = failedTables.filter(t => t !== table))
-        .catch(() => console.warn('PSHDatabase.reset/failed drop', table))
+        .catch(() => maybeWarn('PSHDatabase.reset/failed drop', table))
     }
     this.collections = {}
     await this.initialize(true)
@@ -118,8 +118,8 @@ export default class PSHDatabase {
     const indices = this.indicesForCollection(colName)
     const existingColumns = await this.columns(colName)
     const indexColumns = uniq(union(...indices.map(PSHIndexing.toColumns)), false, col => col.name)
-    console.log('PSHDatabase.create', this.dbName, colName, 'existing columns', existingColumns.map(c => c.name))
-    console.log('PSHDatabase.create', this.dbName, colName, 'to-index columns', indexColumns.map(c => c.name))
+    maybeLog('PSHDatabase.create', this.dbName, colName, 'existing columns', existingColumns.map(c => c.name))
+    maybeLog('PSHDatabase.create', this.dbName, colName, 'to-index columns', indexColumns.map(c => c.name))
     const addColumn = async (colDef: PSHColumnDef) => this.sqlDb.try(`ALTER TABLE ${colName} ADD COLUMN ${colDef.name}`)
     await Promise.all(indexColumns.filter(colDef => !existingColumns.find(c => c.name === colDef.name)).map(addColumn))
     const UNQ = (ix: PSHIndexSpec) => ix.unique ? 'UNIQUE' : ''
@@ -143,27 +143,27 @@ export default class PSHDatabase {
     const [querySql, args] = toSQLQueryable(colName, query)
     const explainQuery = `explain query plan ${querySql}`
     const ret = await this.sqlDb.query<object>(explainQuery, args)
-    console.log('explain', colName, query, ret)
+    maybeLog('explain', colName, query, ret)
   }
 
   async findOne<Data extends Pea>(colName: string, query: PSHDatabaseQuery): Promise<Data|null> {
     const [sql, args] = toSQLQueryable(colName, query)
     const matches = await this.sqlDb.query<Wrapped>(sql, args)
       .then(rs => rs.map(unwrap<Data>))
-      .catch(e => { console.error('PSHDatabase.findOne/error(query)', sql, e); throw e })
+      .catch(e => { maybeError('PSHDatabase.findOne/error(query)', sql, e); throw e })
     if (matches.length > 1) {
-      console.warn('PSHDatabase.findOne removing', matches.length-1, 'dupes for', colName, query)
+      maybeWarn('PSHDatabase.findOne removing', matches.length-1, 'dupes for', colName, query)
       await Promise.all(matches.slice(1).map(t => this.delete(colName, t.id!)))
     }
 
     // debug('PSHDatabase.findOne', sql, args)
-    return this.sqlDb.get<Wrapped>(sql, args).then(x => x ? unwrap<Data>(x) : null).catch(e => { console.error('PSHDatabase.findOne/error', sql, e); throw e })
+    return this.sqlDb.get<Wrapped>(sql, args).then(x => x ? unwrap<Data>(x) : null).catch(e => { maybeError('PSHDatabase.findOne/error', sql, e); throw e })
   }
 
   async find<Data extends Pea>(colName: string, query: PSHDatabaseQuery): Promise<Data[]> {
     const [sql, args] = toSQLQueryable(colName, query)
     // log('PSHDatabase.find', sql, args)
-    return this.sqlDb.query<Wrapped>(sql, args).then(res => res.map(unwrap<Data>)).catch(e => { console.error('PSHDatabase.find/error', sql, e); throw e })
+    return this.sqlDb.query<Wrapped>(sql, args).then(res => res.map(unwrap<Data>)).catch(e => { maybeError('PSHDatabase.find/error', sql, e); throw e })
   }
 
   async dateSaved(colName: string, id: PSHPK) {
@@ -179,7 +179,7 @@ export default class PSHDatabase {
   }
 
   async delete(colName: string, id: PSHPK) {
-    console.log('PSHDB: delete', { colName, id })
+    maybeLog('PSHDB: delete', { colName, id })
     await this.sqlDb.run(`DELETE FROM ${colName} WHERE id = ?`, [id])
   }
 

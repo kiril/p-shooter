@@ -4,6 +4,12 @@ import Pea from "./Pea"
 
 export type PSHDataType = 'V8'|'V16'|'V32'|'REAL'|'INT'|'BOOLEAN'|'BLOB'|'TEXT'
 
+let _debug = false
+export const setDebug = (debug: boolean) => _debug = debug
+export const maybeLog = (...args: any[]) => { if (_debug) console.log(...args) }
+export const maybeError = (...args: any[]) => { if (_debug) console.error(...args) }
+export const maybeWarn = (...args: any[]) => { if (_debug) console.warn(...args) }
+
 export const dataTypeToColumnType = (dt: PSHDataType) => {
   switch (dt) {
     case 'V8': return 'VARCHAR(8)'
