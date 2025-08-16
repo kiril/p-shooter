@@ -135,10 +135,10 @@ export default class PSHEventEngine {
           
           // Start runner if not already running
           if (!runner.isRunning) {
-            maybeLog('PSHEE.register/STARTING', runner.descriptor)
+            maybeLog('PSHEE.register/STARTING', descriptor)
             return runner.start()
           } else {
-            maybeLog('PSHEE.register/EXISTING', runner.descriptor)
+            maybeLog('PSHEE.register/EXISTING', descriptor, 'already running')
           }
         })
         .then(resolve)
