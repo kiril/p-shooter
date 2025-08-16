@@ -135,7 +135,10 @@ export default class PSHEventEngine {
           
           // Start runner if not already running
           if (!runner.isRunning) {
+            maybeLog('PSHEE.register/STARTING', runner.descriptor)
             return runner.start()
+          } else {
+            maybeLog('PSHEE.register/EXISTING', runner.descriptor)
           }
         })
         .then(resolve)
@@ -270,10 +273,7 @@ class PSHCollectionRunner {
   }
 
   async start() {
-    if (this.stopped) {
-      return
-    }
-    
+    this.stopped = false
     // Fetch cursors for all triggers
     for (const [subscriptionId, registration] of this.triggers) {
       registration.cursor = await this.fetchCursor(subscriptionId)
