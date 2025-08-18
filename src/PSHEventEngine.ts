@@ -129,7 +129,7 @@ export default class PSHEventEngine {
     // Start runner if not already running
     if (!runner.isRunning) {
       console.log('PSHEE.register/STARTING runner for', descriptor)
-      await runner.start()
+      runner.start()
     } else {
       console.log('PSHEE.register/runner already running for', descriptor)
     }
