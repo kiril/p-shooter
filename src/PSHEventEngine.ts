@@ -143,6 +143,7 @@ export default class PSHEventEngine {
           maybeError('PSHEE.register/ERROR', e)
           reject(e)
         })
+        .finally(() => console.log('PSHEE.register/FINISHED', descriptor, subscriptionId))
     })
 
     await promise
