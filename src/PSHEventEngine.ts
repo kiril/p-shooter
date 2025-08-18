@@ -109,48 +109,31 @@ export default class PSHEventEngine {
     const subscriptionId = uuid.v4() as string
     const modifiedTrigger = { ...trigger } // copy to avoid mutating original
     const descriptor = `${trigger.col}.${trigger.on}`
-    
-    const promise = new Promise<void>((resolve, reject) => {
-      this.initialize()
-        .then(() => {
-          maybeLog('PSHEE.register/NEW', descriptor, subscriptionId)
-          return this.track(trigger.col, trigger.on)
-        })
-        .then(() => {
-          const date = Date.now()
-          const sql = 'INSERT INTO _cursors (name, date) VALUES (?, ?)'
-          return this.sqlDb.insert<{ date: number }>(sql, [subscriptionId, date])
-            .then(() => date)
-        })
-        .then(date => {
-          // Get or create collection runner
-          let runner = this.collectionRunners.get(trigger.col)
-          if (!runner) {
-            runner = new PSHCollectionRunner(this.sqlDb, trigger.col)
-            this.collectionRunners.set(trigger.col, runner)
-          }
-          
-          // Add trigger to runner
-          runner.addTrigger(modifiedTrigger as PSHTrigger, subscriptionId, date)
-          
-          // Start runner if not already running
-          if (!runner.isRunning) {
-            console.log('PSHEE.register/STARTING runner for', descriptor)
-            return runner.start()
-          } else {
-            console.log('PSHEE.register/runner already running for', descriptor)
-            return Promise.resolve()
-          }
-        })
-        .then(resolve)
-        .catch(e => {
-          maybeError('PSHEE.register/ERROR', e)
-          reject(e)
-        })
-        .finally(() => console.log('PSHEE.register/FINISHED', descriptor, subscriptionId))
-    })
 
-    await promise
+    await this.initialize()
+    maybeLog('PSHEE.register', descriptor, subscriptionId)
+    await this.track(trigger.col, trigger.on)
+    
+    const date = Date.now()
+    const sql = 'INSERT INTO _cursors (name, date) VALUES (?, ?)'
+    await this.sqlDb.insert<{ date: number }>(sql, [subscriptionId, date])
+    let runner = this.collectionRunners.get(trigger.col)
+    if (!runner) {
+      runner = new PSHCollectionRunner(this.sqlDb, trigger.col)
+      this.collectionRunners.set(trigger.col, runner)
+    }
+    
+    // Add trigger to runner
+    runner.addTrigger(modifiedTrigger as PSHTrigger, subscriptionId, date)
+    
+    // Start runner if not already running
+    if (!runner.isRunning) {
+      console.log('PSHEE.register/STARTING runner for', descriptor)
+      await runner.start()
+    } else {
+      console.log('PSHEE.register/runner already running for', descriptor)
+    }
+    console.log('PSHEE.register/FINISHED', descriptor, subscriptionId)
     
     return () => this.unregister(subscriptionId)
   }
