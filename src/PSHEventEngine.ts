@@ -288,13 +288,9 @@ class PSHCollectionRunner {
       const events = uniq(rawEvents, false, e => e.id)
       if (events.length !== rawEvents.length) {
         maybeWarn(`PSHEE ${this.descriptor} found ${rawEvents.length} events, de-duplicated to ${events.length}`)
-        maybeLog(rawEvents)
       }
       if (isEmpty(events) && !isEmpty(rawEvents)) {
         maybeLog('PSHEE', this.descriptor, 'found no events (deduplicated)')
-      }
-      if (!isEmpty(events) && events.length !== rawEvents.length) {
-        maybeLog('PSHEE', this.descriptor, 'found', events.length, 'events (deduplicated from', rawEvents.length, ')')
       }
 
       try {

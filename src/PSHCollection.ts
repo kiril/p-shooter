@@ -142,8 +142,10 @@ export default class PSHCollection {
     await this.db.wipe(this.name)
   }
 
-  async on<DataType extends Pea=Pea, EventType extends PSHEvent<DataType>=PSHEvent<DataType>>(type: PSHEventType, call: (event: EventType) => void) {
-    return this.initialize().then(() => this.db.events.register({ col: this.name, on: type, call }))
+  async on<DataType extends Pea=Pea, EventType extends PSHEvent<DataType>=PSHEvent<DataType>>(type: PSHEventType, call: (event: EventType) => void): Promise<() => void> {
+    await this.initialize()
+    maybeLog('PSHCollection.on', this.qualifiedName, type)
+    return this.db.events.register({ col: this.name, on: type, call })
   }
 
   async onDoc<DataType extends Pea=Pea>(id: PSHPK, call: (object: DataType) => void): Promise<() => void> {
