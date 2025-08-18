@@ -128,12 +128,12 @@ export default class PSHEventEngine {
     
     // Start runner if not already running
     if (!runner.isRunning) {
-      console.log('PSHEE.register/STARTING runner for', descriptor)
+      maybeLog('PSHEE.register/STARTING runner for', descriptor)
       runner.start()
     } else {
-      console.log('PSHEE.register/runner already running for', descriptor)
+      maybeLog('PSHEE.register/runner already running for', descriptor)
     }
-    console.log('PSHEE.register/FINISHED', descriptor, subscriptionId)
+    maybeLog('PSHEE.register/FINISHED', descriptor, subscriptionId)
     
     return () => this.unregister(subscriptionId)
   }
