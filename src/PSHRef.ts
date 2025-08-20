@@ -1,12 +1,11 @@
 import Pea from './Pea'
 import type PSHCollection from './PSHCollection'
-import { PSHPK } from './PSHPK'
 
 export default class PSHRef {
   collection: PSHCollection
-  id: PSHPK
+  id: string
 
-  constructor(collection: PSHCollection, id: PSHPK) {
+  constructor(collection: PSHCollection, id: string) {
     this.collection = collection
     this.id = id
   }

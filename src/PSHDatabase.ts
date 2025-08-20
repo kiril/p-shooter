@@ -8,12 +8,12 @@ import PSHTransaction from './PSHTransaction'
 import PSHCollection from './PSHCollection'
 import PSHIndexing, { PSHIndexSpec } from './PSHIndexing'
 import PSHDeferredWrite from './PSHDeferredWrite'
-import PSHEventEngine from './PSHEventEngine'
+import PSHEventEngine from './events/PSHEventEngine'
 import PSHDatabaseQuery from './PSHDatabaseQuery'
 import PSHColumnDef from './PSHColumnDef'
 import Pea from './Pea'
-import { PSHPK } from './PSHPK'
 import { maybeLog, maybeError, maybeWarn, toSQLQueryable } from './shared'
+import PSHEventsLight from './events/PSHEventsLight'
 
 
 export default class PSHDatabase {
@@ -35,9 +35,9 @@ export default class PSHDatabase {
   }
 
   private readonly config: PSHDatabaseConfig
-  readonly events: PSHEventEngine
   private _initialized = 0
   private collections: Record<string,PSHCollection> = {}
+  events = new PSHEventsLight()
 
   get initialized() {
     return this._initialized
@@ -45,7 +45,6 @@ export default class PSHDatabase {
   
   private constructor(readonly sqlDb: PSHSQLiteWrapper, config?: PSHDatabaseConfig) {
     this.config = { ...config }
-    this.events = new PSHEventEngine(this.sqlDb)
   }
 
   get dbName() {
@@ -72,15 +71,12 @@ export default class PSHDatabase {
     if (this._initialized === 0 || force) {
       maybeLog('PSHDatabase.initialize', this.dbName)
       await Promise.all(this.collectionsToInitialize().map(c => this.create(c)))
-      await this.events.initialize()
-      await this.events.start()
       this._initialized = Date.now()
     }
     return this
   }
 
   async reset() {
-    await this.events.reset()
     const tables = await this.tables()
     let failedTables: string[] = []
     for (const table of tables.filter(t => t !== 'sqlite_sequence')) {
@@ -166,21 +162,22 @@ export default class PSHDatabase {
     return this.sqlDb.query<Wrapped>(sql, args).then(res => res.map(unwrap<Data>)).catch(e => { maybeError('PSHDatabase.find/error', sql, e); throw e })
   }
 
-  async dateSaved(colName: string, id: PSHPK) {
+  async dateSaved(colName: string, id: string) {
     const record = await this.sqlDb.get<{ date: number }>(`SELECT date FROM ${colName} WHERE id = ?`, [id])
     return record ? record.date : null
   }
 
-  async save<Data extends Pea>(colName: string, ob: Data, id?: PSHPK): Promise<PSHPK> {
-    id = id || ob.id || (uuid.v4() as string)
-    const { sql, args } = this.toWrite(colName, id, ob)
+  async save<Data extends Pea>(colName: string, ob: Data): Promise<Data> {
+    const { sql, args } = this.toWrite(colName, ob.id, ob)
     await this.sqlDb.run(sql, args)
-    return id
+    this.events.emit({ col: colName, id: ob.id, type: 'write', date: Date.now(), data: ob })
+    return ob
   }
 
-  async delete(colName: string, id: PSHPK) {
+  async delete(colName: string, id: string) {
     maybeLog('PSHDB: delete', { colName, id })
     await this.sqlDb.run(`DELETE FROM ${colName} WHERE id = ?`, [id])
+    this.events.emit({ col: colName, id, type: 'delete', date: Date.now() })
   }
 
   async deleteOne(colName: string, query: PSHDatabaseQuery) {
@@ -195,7 +192,7 @@ export default class PSHDatabase {
     await this.sqlDb.try(`DELETE FROM ${colName}`)
   }
 
-  toWrite<Data extends Pea>(colName: string, id: PSHPK, ob: Data): PSHDeferredWrite {
+  toWrite<Data extends Pea>(colName: string, id: string, ob: Data): PSHDeferredWrite {
     const json = JSON.stringify({ ...ob, id })
     const now = Date.now()
     
@@ -229,7 +226,7 @@ export interface PSHDatabaseConfig {
 const unwrap = <Data extends Pea>(wrapper: Wrapped): Data => ({ ...JSON.parse(wrapper.json), saved: wrapper.date, id: wrapper.id || 'WTAF' } as Data)
 
 interface Wrapped {
-  id: PSHPK
+  id: string
   json: string
   date: number
 }

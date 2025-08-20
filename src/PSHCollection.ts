@@ -2,10 +2,9 @@ import uuid from 'react-native-uuid'
 import type PSHDatabase from './PSHDatabase'
 import PSHRef from './PSHRef'
 import PSHDeferredWrite from './PSHDeferredWrite'
-import PSHEvent, { PSHEventType } from './PSHEvent'
+import PSHEvent, { PSHEventType } from './events/PSHEvent'
 import PSHDatabaseQuery from './PSHDatabaseQuery'
 import Pea from './Pea'
-import { PSHPK } from './PSHPK'
 import { maybeLog, maybeError, matchesQuery } from './shared'
 
 
@@ -111,10 +110,10 @@ export default class PSHCollection {
     return this.db.toWrite(this.name, id, ob)
   }
 
-  async save<Data extends Pea>(ob: Data, id?: string): Promise<string> {
-    maybeLog('PSHCollection.save', this.qualifiedName, id || ob.id, ob)
+  async save<Data extends Pea>(ob: Data): Promise<Data> {
+    maybeLog('PSHCollection.save', this.qualifiedName, ob.id, ob)
     await this.initialize()
-    return this.db.save(this.name, ob, id)
+    return this.db.save(this.name, ob)
   }
 
   async update(id: string, updates: Record<string,unknown>) {
@@ -124,7 +123,7 @@ export default class PSHCollection {
     if (!existing) {
       throw Error(`PSHCollection.update: ${this.qualifiedName} missing value for id ${id}`)
     }
-    return this.save({ ...existing, ...updates }, id)
+    return this.save({ ...existing, ...updates })
   }
 
   async delete(id: string) {
@@ -142,49 +141,37 @@ export default class PSHCollection {
     await this.db.wipe(this.name)
   }
 
-  async on<DataType extends Pea=Pea, EventType extends PSHEvent<DataType>=PSHEvent<DataType>>(type: PSHEventType, call: (event: EventType) => void): Promise<() => void> {
-    await this.initialize()
+  on<DataType extends Pea=Pea, Event extends PSHEvent<DataType>=PSHEvent<DataType>>(type: PSHEventType, call: (event: Event) => void): () => void {
     maybeLog('PSHCollection.on', this.qualifiedName, type)
-    const ret = this.db.events.register({ col: this.name, on: type, call })
+    const ret = this.db.events.on(this.name, type, call)
     maybeLog('PSHCollection.on/registered', this.qualifiedName, type, ret)
     return ret
   }
 
-  async onDoc<DataType extends Pea=Pea>(id: PSHPK, call: (object: DataType) => void): Promise<() => void> {
-    const initialDoc = await this.get<DataType>(id)
-    if (initialDoc) {
-      try {
-        call(initialDoc)
-      } catch (error) {
-        maybeError('PSHCollection.onDoc callback error:', error)
-      }
-    }
-    return this.on<DataType>('write', (event) => {
-      if (event.id === id && event.after) {
+  onDoc<Data extends Pea=Pea>(id: string, call: (object: Data|undefined) => void): () => void {
+    this.get<Data>(id).then(initialDoc => {
+      if (initialDoc) {
         try {
-          call(event.after)
+          call(initialDoc)
         } catch (error) {
           maybeError('PSHCollection.onDoc callback error:', error)
         }
       }
     })
+    return this.db.events.onDocument<Data>(this.name, id, 'write', (event) => call(event.data))
   }
 
-  async onQuery<Object extends Pea=Pea>(query: PSHDatabaseQuery, call: (results: Object[]) => void|Promise<void>): Promise<() => void> {
+  onQuery<Object extends Pea=Pea>(query: PSHDatabaseQuery, call: (results: Object[]) => void|Promise<void>): () => void {
     maybeLog('PSHCollection.onQuery', this.qualifiedName, query)
-    const initialData = await this.find<Object>(query)
-    maybeLog('PSHCollection.onQuery/initialData', initialData.length)
-    call(initialData)
+    this.find<Object>(query).then(initialData => {
+      maybeLog('PSHCollection.onQuery/initialData', initialData.length)
+      call(initialData)
+    })
     return this.on<Object>('write', async (event) => {
-      if ((event.after && matchesQuery(event.after, query)) || (event.before && matchesQuery(event.before, query))) {
+      if (event.data && matchesQuery(event.data, query)) {
         const results = await this.find<Object>(query)
         call(results)
       }
     })
-  }
-
-  async track(on: PSHEventType) {
-    await this.initialize()
-    await this.db.events.track(this.name, on)
   }
 }

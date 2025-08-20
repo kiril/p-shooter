@@ -1,6 +1,5 @@
-import { PSHPK } from './PSHPK'
-
 export default interface Pea {
-  id?: PSHPK
+  collection: string
+  id: string
   saved?: number
 }

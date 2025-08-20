@@ -34,7 +34,8 @@ export function toSQLQueryable(colName: string, query: PSHDatabaseQuery): PSHSQL
   return [sql, args]
 }
 
-export const matchesQuery = <Object extends Pea=Pea>(object: Object, query: PSHDatabaseQuery): boolean => {
+export const matchesQuery = <Object extends Pea=Pea>(object: Object|undefined, query: PSHDatabaseQuery): boolean => {
+  if (!object) return false
   return Object.entries(query).every(([queryKey, queryValue]) => {
     const objectValue = object[queryKey as keyof Object] as PSHDatabaseQueryValue|undefined
     if (isArray(queryValue)) {
