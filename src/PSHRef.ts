@@ -15,7 +15,7 @@ export default class PSHRef {
   }
 
   async set(ob: Pea) {
-    await this.collection.save(ob, this.id)
+    await this.collection.save(ob)
   }
 
   toWrite(ob: Pea) {

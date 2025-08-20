@@ -1,5 +1,4 @@
-import { get, isArray, union, uniq } from 'underscore'
-import uuid from 'react-native-uuid'
+import { get, union, uniq } from 'underscore'
 
 import SQLColumnInfo from './types/sqlite/SQLColumnInfo'
 
@@ -8,7 +7,6 @@ import PSHTransaction from './PSHTransaction'
 import PSHCollection from './PSHCollection'
 import PSHIndexing, { PSHIndexSpec } from './PSHIndexing'
 import PSHDeferredWrite from './PSHDeferredWrite'
-import PSHEventEngine from './events/PSHEventEngine'
 import PSHDatabaseQuery from './PSHDatabaseQuery'
 import PSHColumnDef from './PSHColumnDef'
 import Pea from './Pea'
